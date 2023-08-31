@@ -1,5 +1,14 @@
+
+# Will referred by xxx_m
+# Contents:
+# * Base classes across this project.
+
 from pytorch_lightning import LightningModule
+import pytorch_lightning as pl
 from typing import Dict,List
+
+# NOTICE: MyDataModule: Currently, valid set == test set
+# model, for trainer of pl
 class ModelBase(LightningModule):
     """
     """
@@ -43,28 +52,92 @@ class ModelBase(LightningModule):
         """
         return super().on_train_epoch_end()
 
+
+
+# datamodule for trainer of pl
+from torch.utils.data import DataLoader
+class MyDataModule(pl.LightningDataModule):
+    def __init__(self, dataset_train, dataset_test,*, batch_size:int ,num_workers = 8):
+        super().__init__()
+        self.save_hyperparameters()
+        
+        self.dataset_train = dataset_train
+        self.dataset_test = dataset_test
+    
+
+    def train_dataloader(self,n_limit:int|None=None,batch_size:int|None=None):
+        if n_limit is None:
+            dataset = self.dataset_train
+        else:
+            assert n_limit>=1
+            dataset = self.dataset_test.limit(n_limit)
+        if batch_size is None:
+            batch_size = self.hparams.batch_size
+        # return DataLoader(dataset, batch_size=batch_size, shuffle=False,pin_memory=False,num_workers=self.hparams.num_workers)
+        return DataLoader(dataset, batch_size=batch_size, shuffle=False,pin_memory=False) # No num_worker parameters
+    
+    def test_dataloader(self,n_limit:int|None=None, batch_size:int|None=None):
+        if n_limit is None:
+            dataset = self.dataset_test
+        else:
+            assert n_limit>=1
+            dataset = self.dataset_test.limit(n_limit)
+        if batch_size is None:
+            batch_size = self.hparams.batch_size
+        # return DataLoader(dataset, batch_size=batch_size, shuffle=False,pin_memory=False,num_workers=self.hparams.num_workers)
+        return DataLoader(dataset, batch_size=batch_size, shuffle=False,pin_memory=False) # No num_workers paramter
+
+    def val_dataloader(self,n_limit:int|None=None, batch_size:int|None=None):
+        return self.test_dataloader(n_limit,batch_size)
+    
+
+# dataset for datamodule
 from pathlib import Path
 from typing import overload,Tuple,List,Dict,Optional
 from ren_utils.data import ImageDataset
+
+## dataset for denoising 
+
+from PIL import Image
+import numpy as np
 class DenoiseDataset(ImageDataset):
     """
-    However, currently, this works;
-    [# TODO] Replace with kornia in mha7;
+    (noisy,clean)<--getitem
     """
     @overload
     def __init__(self):
         """Create an empty object"""
     @overload
-    def __init__(self,samples:List[str|Path],labels:List[str|Path],masks:List[str|Path],*,resize_size:Tuple[int,int]|None=None):
+    def __init__(self,noisy:List[str|Path],clean:List[str|Path],*,resize_size:Tuple[int,int]|None=None):
         """
         samples: List(path-to-imgs,...)
         """
-    def __init__(self,samples:List[str|Path]=None,labels:List[str|Path]=None,masks:List[str|Path]=None,*,resize_size:Tuple[int,int]|None=None):
+    def __init__(self,noisy:List[str|Path]=None,clean:List[str|Path]=None,*,resize_size:Tuple[int,int]|None=None):
         """
         samples: List(path-to-imgs,...)
         """
-        if samples is not None:
-            super().__init__([samples,labels,masks],resize_size=resize_size) # Not resize.
+        if noisy is None:
+            if clean is None:
+                ImageDataset.__init__()
+            else:
+                _p = Path(clean[0]).parent
+                p_noisy_root = Path(_p.parent,_p.stem+"_noisy")
+                if p_noisy_root.exists():
+                    is_empty = not any(p_noisy_root.iterdir())
+                    if not is_empty:
+                        raise Exception("Please remove existing")
+                else:
+                    p_noisy_root.mkdir(parents=True)
+                for p in clean:
+                    imga = np.array(Image.open(p)) # [0,255]
+                    noi = np.random.randn(*imga.shape)*255
+                    imgan = np.clip(np.round(imga+noi),0,255)
+                    imgan = imgan.astype(imga.dtype)
+                    Image.fromarray(imgan).save(Path(p_noisy_root,Path(p).stem+Path(p).suffix))
+                    
+                ImageDataset.__init__([noisy, clean], resize_size=resize_size)
         else:
-            super().__init__()
-        
+            if clean is not None:
+                ImageDataset.__init__([noisy, clean], resize_size=resize_size)
+            else: # ONLY noisy pictures
+                raise Exception("Only noisy ones")

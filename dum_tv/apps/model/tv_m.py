@@ -1,45 +1,14 @@
-# NOTICE: MyDataModule: Currently, valid set == test set
+
+# Will import:
+# * xxx_h
+# * xxx_opr
+# Contents:
+# * Deep unfolding networks
+
 import pytorch_lightning as pl
 
 
 
-# DataModule
-from torch.utils.data import DataLoader
-class MyDataModule(pl.LightningDataModule):
-    def __init__(self, dataset_train, dataset_test,*, batch_size:int ,num_workers = 8):
-        super().__init__()
-        self.save_hyperparameters()
-        
-        self.dataset_train = dataset_train
-        self.dataset_test = dataset_test
-    
-
-    def train_dataloader(self,n_limit:int|None=None,batch_size:int|None=None):
-        if n_limit is None:
-            dataset = self.dataset_train
-        else:
-            assert n_limit>=1
-            dataset = self.dataset_test.limit(n_limit)
-        if batch_size is None:
-            batch_size = self.hparams.batch_size
-        # return DataLoader(dataset, batch_size=batch_size, shuffle=False,pin_memory=False,num_workers=self.hparams.num_workers)
-        return DataLoader(dataset, batch_size=batch_size, shuffle=False,pin_memory=False) # No num_worker parameters
-    
-    def test_dataloader(self,n_limit:int|None=None, batch_size:int|None=None):
-        if n_limit is None:
-            dataset = self.dataset_test
-        else:
-            assert n_limit>=1
-            dataset = self.dataset_test.limit(n_limit)
-        if batch_size is None:
-            batch_size = self.hparams.batch_size
-        # return DataLoader(dataset, batch_size=batch_size, shuffle=False,pin_memory=False,num_workers=self.hparams.num_workers)
-        return DataLoader(dataset, batch_size=batch_size, shuffle=False,pin_memory=False) # No num_workers paramter
-
-    def val_dataloader(self,n_limit:int|None=None, batch_size:int|None=None):
-        return self.test_dataloader(n_limit,batch_size)
-    
-    
     
 # Model
 from torch.nn import Module
@@ -244,16 +213,32 @@ class Varia:
     kerK:str   
     beta:float  
     rho:float
+    _initialized:dict
     def to(self,device):
         for k,v in vars(self).items():
             if isinstance(v,torch.Tensor):
                 setattr(self,k,v.to(device))
         return self
+    def as_controled_init(self, keys:Optional[List[str]]=None):
+        """None: all in _initialized"""
+        o = []
+        if keys in None:
+            for k,v in self._initialized:
+                o.append((k,v))
+        else:
+            _i = self._initialized
+            for k in keys:
+                if k in _i:
+                    o.append((k,_i[k]))
+                else:
+                    raise Exception(f"{k} not in ._initialized: {_i.keys()}")
+        return o
         
         
-def init_varia(varia:Varia,device:torch.device, *, p_cache_dict:str, verbose = True):
+        
+def init_varia(varia:Varia,device:torch.device):
     """
-    Return a tuple
+    Return None; Store to varia._initialized
 
     
 
@@ -272,12 +257,12 @@ def init_varia(varia:Varia,device:torch.device, *, p_cache_dict:str, verbose = T
     C = varia.C
     kR = varia.kR
     
-    kerK = torch.cat(getKernel_dispatch(varia_ins.kerK,K,kR) ,dim=0)# K,1,kR,kR
+    kerK = torch.cat(getKernel_dispatch(varia.kerK,kO,kR) ,dim=0)# K,1,kR,kR
     kerK = KtoCK(kerK,C=C,dim=0).clone().detach()
     
     
     beta = torch.tensor(varia.beta).reshape(1,1,1,1).float()
-    rho =  torch.ones((C*kO,1,1,1))*varia_ins.sigma # CK 1 1 1
+    rho =  torch.ones((C*kO,1,1,1))*varia.rho # CK 1 1 1
 
     gamma= beta.unsqueeze(1).expand(1,C,kO,1,1).reshape(1,C*kO,1,1)/varia.rho
     
@@ -285,5 +270,8 @@ def init_varia(varia:Varia,device:torch.device, *, p_cache_dict:str, verbose = T
     assert tuple(beta.shape)== (1,1,1,1),f"beta {tuple(beta.shape) } neq {(1,1,1,1)}"
     assert tuple(gamma.shape)==(1,kO*C,1,1),f"gamma {tuple(gamma.shape)} neq {(1,kO*C,1,1)}"
     
-    return beta, gamma, rho, kerK, 
-    
+    varia._initialized=  {
+        "beta":beta.to(device), 
+        "gamma":gamma.to(device), 
+        "rho":rho.to(device), 
+        "kerK":kerK.to(device)}

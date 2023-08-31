@@ -1,24 +1,28 @@
-from .tv_m import MyDataModule
+# Will import:
+# * xxx_h
+# * xxx_m
+# Things for a bunch of specific experiments
+from typing import Tuple
+import dum_tv as pkg
+from .tv_h import MyDataModule
 class DenoiseDataModule(MyDataModule):
     pass
 
-def get_dataset_Denoise():
+from .tv_h import DenoiseDataset
+def get_dataset_DenoiseToy():
+    """{"dataset_train","dataset_test"}"""
     from pathlib import Path
     import dum_tv as pkg
     from ren_utils.data import list_pictures
     root_pkg = Path(pkg.__file__).parent
     # Data
-    proot = Path(root_pkg,"../Datasets/Denoise/data/") # Do the sof-link
+    proot = Path(root_pkg,"../Datasets/DenoiseToy/data/") # Do the sof-link
     dataset_train = DenoiseDataset(
-            samples = list_pictures(Path(proot, "train/images")),
-            labels = list_pictures(Path(proot, "train/labels")),
-            masks = list_pictures(Path(proot, "train/masks")))
+            clean = list_pictures(Path(proot, "train/clean")))
     dataset_test = DenoiseDataset(
-        samples = list_pictures(Path(proot, "test/images")),
-        labels = list_pictures(Path(proot, "test/labels")),
-        masks = list_pictures(Path(proot, "test/masks")))
+        clean = list_pictures(Path(proot, "test/clean")))
 
-    return {"train":dataset_train,"test":dataset_test}
+    return {"dataset_train":dataset_train,"dataset_test":dataset_test}
 
 
 
@@ -81,3 +85,79 @@ class Model(ModelBase):
             "monitor":"val_loss",
         }}
         
+        
+from pathlib import Path
+root_pkg = Path(pkg.__file__).parent
+configs_fname = ".".join(Path(__file__).relative_to(root_pkg).parts)
+configs_fname  = Path(configs_fname).stem+".yaml"
+configs_path = Path(root_pkg,"Scripts",configs_fname)
+
+
+# PLOT compile_xxx
+import pytorch_lightning as pl
+root_Results = Path(root_pkg,"Results")
+assert (root_Results).exists(),f"Results folder not exists. Create of softlink it: {root_Results}"
+def compile_iteration_tv(
+    patch_shape:Tuple[int,int,int],
+    n_iteration:int,# depth of DU
+    varia_d:dict,
+    #
+    dm:MyDataModule,
+    gpuid:int,
+    cfn:str,
+):
+    """
+    Iterative solver;
+    """
+    
+    from .tv_m import Varia,init_varia
+    varia = Varia(varia_d)
+    init_varia(varia,device = torch.device("cpu"))
+    tvnet = TVNet(patch_shape,n_iteration,None,varia.as_controled_init())
+   
+    from datetime import timedelta
+    root_dir = Path(root_Results,cfn).as_posix()
+    trainer = pl.Trainer(default_root_dir=root_dir,gpus=[gpuid])
+    log_dir=  trainer.log_dir
+    model = Model(tvnet,0,1)
+    
+    def runner(trainer:pl.Trainer, model:Model,dm):
+        log_dir = trainer.log_dir
+        return trainer.predict(model,datamodule=dm,return_predictions=True)
+
+    return trainer, model, runner
+
+
+
+
+def compile_training_tv(
+    patch_shape:Tuple[int,int,int],
+    n_iteration:int,# depth of DU
+    varia_d:dict,
+    #
+    dm:MyDataModule,
+    gpuid:int,
+    cfn:str,
+):
+    """
+    Deep unfolding; Training
+    """
+    
+    from .tv_m import Varia,init_varia
+    varia = Varia(varia_d)
+    init_varia(varia,device = torch.device("cpu"))
+    tvnet = TVNet(patch_shape,n_iteration,None,varia.as_controled_init())
+   
+    from datetime import timedelta
+    root_dir = Path(root_Results,cfn).as_posix()
+    trainer = pl.Trainer(default_root_dir=root_dir,gpus=[gpuid])
+    log_dir=  trainer.log_dir
+    model = Model(tvnet,0,1)
+    
+    # TODO
+    
+    def runner(trainer:pl.Trainer, model:Model,dm):
+        log_dir = trainer.log_dir
+        return trainer.fit(model,datamodule=dm,return_predictions=True)
+
+    return trainer, model, runner
