@@ -85,18 +85,19 @@ class Model(ModelBase):
             "monitor":"val_loss",
         }}
         
-        
+# PLOT config   
 from pathlib import Path
-root_pkg = Path(pkg.__file__).parent
+root_pkg = Path(pkg.__file__).parent # dum_tv folder
 configs_fname = ".".join(Path(__file__).relative_to(root_pkg).parts)
 configs_fname  = Path(configs_fname).stem+".yaml"
-configs_path = Path(root_pkg,"Scripts",configs_fname)
+configs_path = Path(root_pkg.parent,"Scripts",configs_fname)
 
 
 # PLOT compile_xxx
 import pytorch_lightning as pl
-root_Results = Path(root_pkg,"Results")
+root_Results = Path(root_pkg.parent,"Results")
 assert (root_Results).exists(),f"Results folder not exists. Create of softlink it: {root_Results}"
+
 def compile_iteration_tv(
     patch_shape:Tuple[int,int,int],
     n_iteration:int,# depth of DU
@@ -158,6 +159,39 @@ def compile_training_tv(
     
     def runner(trainer:pl.Trainer, model:Model,dm):
         log_dir = trainer.log_dir
-        return trainer.fit(model,datamodule=dm,return_predictions=True)
+        return trainer.fit(model,datamodule=dm)
 
     return trainer, model, runner
+
+if __name__ == "__main__":
+    #
+    from pathlib import Path
+
+    #
+    import dum_tv.apps.model.main as main
+    __file__ = main.__file__
+
+    import dum_tv as pkg
+    cfn = Path(__file__).stem
+    root_pkg = Path(pkg.__file__).parent
+
+
+    dm_map = {
+        "denoise": main.DenoiseDataModule(batch_size=4,**main.get_dataset_DenoiseToy())
+    }
+
+
+    # ====
+    from ren_utils.pl import run_by_title
+
+    gpuid = 0
+    def run(title,gpuid,dm_name,dm):
+        return run_by_title(title,gpuid,f"{cfn}__{dm_name}",dm,config_parser_dict=vars(main),p_configs=main.configs_path)
+
+    dm_name = "denoise"
+    dm = dm_map[dm_name]
+
+    group = ["Iteration"]
+
+    if "Iteration" in group:
+        prediction = run("iteration",gpuid,dm_name,dm)

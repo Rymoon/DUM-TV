@@ -118,7 +118,7 @@ class DenoiseDataset(ImageDataset):
         """
         if noisy is None:
             if clean is None:
-                ImageDataset.__init__()
+                ImageDataset.__init__(self)
             else:
                 _p = Path(clean[0]).parent
                 p_noisy_root = Path(_p.parent,_p.stem+"_noisy")
