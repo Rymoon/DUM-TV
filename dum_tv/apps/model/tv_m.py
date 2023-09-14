@@ -36,7 +36,7 @@ class TVNet(Module):
     If the control_model is None, then
     * args in controled_init will go along.
     """
-    controled_names = ("kerK","beta","rho")# type: Tuple[str,...]
+    controled_names = ("kerK","gamma","rho")# type: Tuple[str,...]
     def __init__(self,patch_shape:Tuple[int,int,int],n_steps:int,control_model:Module,controled_init:List[Tuple[str,Tensor]]):
         """
         patch_shape: CHW
@@ -47,9 +47,12 @@ class TVNet(Module):
         self.n_steps = n_steps
         self.control_model = control_model 
         
-        assert self.controled_names == tuple(i[0] for i in controled_init), f"Order and names should match:{self.controled_names} neq {tuple(i[0] for i in controled_init)}"
+        # assert self.controled_names == tuple(i[0] for i in controled_init), f"Order and names should match:{self.controled_names} neq {tuple(i[0] for i in controled_init)}"
+        cid = {k:v for k,v in controled_init}
+        assert all([k in cid for k in self.controled_names]), (cid.keys(),self.controled_names)
+        ccid = {k:cid[k] for k in self.controled_names}
         
-        self.controled_init = ParameterList([ParameterDict({k:v for k,v in controled_init}) for i in range(n_steps)])
+        self.controled_init = ParameterList([ParameterDict({k:v for k,v in ccid.items()}) for i in range(n_steps)])
         
         # Related to variational model
         ### Maintained through layers
@@ -59,7 +62,7 @@ class TVNet(Module):
         # lamh (B,C*kO,H,W)
         # repeat B later in function `step`
         C,H,W = self.patch_shape
-        kerK = controled_init[self.controled_names.index("kerK")][1]
+        kerK = ccid["kerK"]
         kO= kerK.shape[0]//C
         assert (kerK.shape[-1]-1)%2 == 0,kerK.shape
         kR = (kerK.shape[-1]-1)//2
@@ -69,7 +72,7 @@ class TVNet(Module):
             "mu": torch.zeros((1,C*kO,H,W)),
         },persistent=False)
         
-        _Constants = namedtuple(f"{type(self).__name__}::_Constants","kO kR C H W")
+        _Constants = namedtuple(f"{type(self).__name__}_Constants","kO kR C H W")
         self.constants = _Constants(kO,kR,C,H,W)
         
     def repeat_state_var(self,v:torch.Tensor,batch_size:int):
@@ -123,7 +126,7 @@ class TVNet(Module):
         #rho D^T
         kerW = rho* kerK.flip((-1,-2))
         # u = inv(kerH)*_w1
-        _w1 = f + CKtoC(conv2c_parallel(kerW,(p-mu)))
+        _w1 = f + CKtoC(conv2c_parallel(kerW,(p-mu)),C=C,dim = 1) # B, C, H, W
         
         ktk  = squeezek(conv2k(kerK,kerK))*rho # C*kO,1,...
         sktk = ktk.reshape(C,kO,1,ktk.shape[-2],ktk.shape[-1]).sum(dim=1) # C,kO,1,2*kR+1,2*kR+1
@@ -213,7 +216,7 @@ class Varia:
     kerK:str   
     beta:float  
     rho:float
-    _initialized:dict
+    _initialized:dict=None
     def to(self,device):
         for k,v in vars(self).items():
             if isinstance(v,torch.Tensor):
@@ -222,8 +225,8 @@ class Varia:
     def as_controled_init(self, keys:Optional[List[str]]=None):
         """None: all in _initialized"""
         o = []
-        if keys in None:
-            for k,v in self._initialized:
+        if keys is None:
+            for k,v in self._initialized.items():
                 o.append((k,v))
         else:
             _i = self._initialized

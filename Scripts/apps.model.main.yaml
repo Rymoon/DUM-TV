@@ -1,0 +1,20 @@
+experiments:
+  iteration:
+    compiler: compile_iteration_tv
+    config:
+      dm_batch_size: 1
+      n_iteration: 40
+      patch_shape:
+      - 3
+      - 256
+      - 256
+      varia_d:
+        C: 3
+        beta: 1
+        kO: 2
+        kR: 1
+        kerK: DxDy
+        rho: 1
+      varia_d-name: Toy
+    datetime: '2023-09-14 10:05:47.627324'
+    note: Toy denoise

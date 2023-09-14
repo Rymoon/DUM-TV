@@ -128,16 +128,19 @@ class DenoiseDataset(ImageDataset):
                         raise Exception("Please remove existing")
                 else:
                     p_noisy_root.mkdir(parents=True)
+                noisy = []
                 for p in clean:
                     imga = np.array(Image.open(p)) # [0,255]
                     noi = np.random.randn(*imga.shape)*255
                     imgan = np.clip(np.round(imga+noi),0,255)
                     imgan = imgan.astype(imga.dtype)
-                    Image.fromarray(imgan).save(Path(p_noisy_root,Path(p).stem+Path(p).suffix))
+                    p = Path(p_noisy_root,Path(p).stem+Path(p).suffix)
+                    Image.fromarray(imgan).save(p)
+                    noisy.append(p.as_posix())
                     
-                ImageDataset.__init__([noisy, clean], resize_size=resize_size)
+                ImageDataset.__init__(self,[noisy, clean], resize_size=resize_size)
         else:
             if clean is not None:
-                ImageDataset.__init__([noisy, clean], resize_size=resize_size)
+                ImageDataset.__init__(self,[noisy, clean], resize_size=resize_size)
             else: # ONLY noisy pictures
                 raise Exception("Only noisy ones")

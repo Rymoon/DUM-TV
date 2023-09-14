@@ -2,6 +2,7 @@
 # * xxx_h
 # * xxx_m
 # Things for a bunch of specific experiments
+from pathlib import Path
 from typing import Tuple
 import dum_tv as pkg
 from .tv_h import MyDataModule
@@ -18,9 +19,12 @@ def get_dataset_DenoiseToy():
     # Data
     proot = Path(root_pkg,"../Datasets/DenoiseToy/data/") # Do the sof-link
     dataset_train = DenoiseDataset(
+            noisy = list_pictures(Path(proot, "train/clean_noisy")),
             clean = list_pictures(Path(proot, "train/clean")))
     dataset_test = DenoiseDataset(
-        clean = list_pictures(Path(proot, "test/clean")))
+        noisy = list_pictures(Path(proot, "test/clean_noisy")),
+        clean = list_pictures(Path(proot, "test/clean"))
+        )
 
     return {"dataset_train":dataset_train,"dataset_test":dataset_test}
 
@@ -45,8 +49,10 @@ class Model(ModelBase):
         return u
     
     def training_step(self,pack,pack_idx):
-        patches = self.pack_as_patches(pack)
-        f,lab,*ext = patches
+        
+        noisy,clean = pack
+        f = noisy
+        lab = clean
         self.last_train_device = f.device
         u = self.forward(f)
 
@@ -60,8 +66,10 @@ class Model(ModelBase):
         return loss
 
     def validation_step(self,pack, pack_idx):
-        patches = self.pack_as_patches(pack)
-        f,lab,*ext = patches
+        
+        noisy,clean = pack
+        f = noisy
+        lab = clean
         self.last_train_device = f.device
         u = self.forward(f)
 
@@ -85,17 +93,16 @@ class Model(ModelBase):
             "monitor":"val_loss",
         }}
         
-# PLOT config   
-from pathlib import Path
-root_pkg = Path(pkg.__file__).parent # dum_tv folder
-configs_fname = ".".join(Path(__file__).relative_to(root_pkg).parts)
-configs_fname  = Path(configs_fname).stem+".yaml"
-configs_path = Path(root_pkg.parent,"Scripts",configs_fname)
 
+# PLOT config        
+from dum_tv.utils import get_configs_path
+configs_path = get_configs_path(pkg,__file__)
 
 # PLOT compile_xxx
 import pytorch_lightning as pl
-root_Results = Path(root_pkg.parent,"Results")
+from dum_tv.utils import get_root_Results
+import dum_tv as pkg
+root_Results = get_root_Results(pkg)
 assert (root_Results).exists(),f"Results folder not exists. Create of softlink it: {root_Results}"
 
 def compile_iteration_tv(
@@ -112,19 +119,22 @@ def compile_iteration_tv(
     """
     
     from .tv_m import Varia,init_varia
-    varia = Varia(varia_d)
+    varia = Varia(**varia_d)
     init_varia(varia,device = torch.device("cpu"))
     tvnet = TVNet(patch_shape,n_iteration,None,varia.as_controled_init())
    
     from datetime import timedelta
+    from ren_utils.pl import ElapsedTime,ModelSummarySave
     root_dir = Path(root_Results,cfn).as_posix()
-    trainer = pl.Trainer(default_root_dir=root_dir,gpus=[gpuid])
+    trainer = pl.Trainer(default_root_dir=root_dir,gpus=[gpuid],
+                         callbacks=[ElapsedTime(),ModelSummarySave()])
     log_dir=  trainer.log_dir
     model = Model(tvnet,0,1)
     
     def runner(trainer:pl.Trainer, model:Model,dm):
         log_dir = trainer.log_dir
-        return trainer.predict(model,datamodule=dm,return_predictions=True)
+        pred = trainer.predict(model,dataloaders = dm.test_dataloader(),return_predictions=True)
+        return pred
 
     return trainer, model, runner
 
@@ -150,8 +160,10 @@ def compile_training_tv(
     tvnet = TVNet(patch_shape,n_iteration,None,varia.as_controled_init())
    
     from datetime import timedelta
+    from ren_utils.pl import ElapsedTime,ModelSummarySave
     root_dir = Path(root_Results,cfn).as_posix()
-    trainer = pl.Trainer(default_root_dir=root_dir,gpus=[gpuid])
+    trainer = pl.Trainer(default_root_dir=root_dir,gpus=[gpuid],
+                         callbacks = [ElapsedTime(),ModelSummarySave()])
     log_dir=  trainer.log_dir
     model = Model(tvnet,0,1)
     
