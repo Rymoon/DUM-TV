@@ -100,6 +100,8 @@ from ren_utils.data import ImageDataset
 
 from PIL import Image
 import numpy as np
+from warnings import warn
+from ren_utils.data import list_pictures
 class DenoiseDataset(ImageDataset):
     """
     (noisy,clean)<--getitem
@@ -108,35 +110,36 @@ class DenoiseDataset(ImageDataset):
     def __init__(self):
         """Create an empty object"""
     @overload
-    def __init__(self,noisy:List[str|Path],clean:List[str|Path],*,resize_size:Tuple[int,int]|None=None):
+    def __init__(self,noisy:List[str|Path],clean:List[str|Path],*,resize_size:Tuple[int,int]|None=None,add_noise_std=0.01):
         """
         samples: List(path-to-imgs,...)
         """
-    def __init__(self,noisy:List[str|Path]=None,clean:List[str|Path]=None,*,resize_size:Tuple[int,int]|None=None):
+    def __init__(self,noisy:List[str|Path]=None,clean:List[str|Path]=None,*,resize_size:Tuple[int,int]|None=None,add_noise_std=0.1):
         """
         samples: List(path-to-imgs,...)
         """
+        self.add_noise_std = add_noise_std
         if noisy is None:
             if clean is None:
                 ImageDataset.__init__(self)
             else:
                 _p = Path(clean[0]).parent
                 p_noisy_root = Path(_p.parent,_p.stem+"_noisy")
-                if p_noisy_root.exists():
-                    is_empty = not any(p_noisy_root.iterdir())
-                    if not is_empty:
-                        raise Exception("Please remove existing")
+                if p_noisy_root.exists() and any(p_noisy_root.iterdir()):# exist not empty
+                        print(f"Already generated, use cache: {p_noisy_root}")
+                        noisy = list_pictures(p_noisy_root)
                 else:
-                    p_noisy_root.mkdir(parents=True)
-                noisy = []
-                for p in clean:
-                    imga = np.array(Image.open(p)) # [0,255]
-                    noi = np.random.randn(*imga.shape)*255
-                    imgan = np.clip(np.round(imga+noi),0,255)
-                    imgan = imgan.astype(imga.dtype)
-                    p = Path(p_noisy_root,Path(p).stem+Path(p).suffix)
-                    Image.fromarray(imgan).save(p)
-                    noisy.append(p.as_posix())
+                    p_noisy_root.mkdir(exist_ok=True,parents=True)
+                    noisy = []
+                    for p in clean:
+                        imga = np.array(Image.open(p)) # [0,255]
+                        noi = np.random.randn(*imga.shape)*self.add_noise_std
+                        noi=noi*255
+                        imgan = np.clip(np.round(imga+noi),0,255)
+                        imgan = imgan.astype(imga.dtype)
+                        p = Path(p_noisy_root,Path(p).stem+Path(p).suffix)
+                        Image.fromarray(imgan).save(p)
+                        noisy.append(p.as_posix())
                     
                 ImageDataset.__init__(self,[noisy, clean], resize_size=resize_size)
         else:

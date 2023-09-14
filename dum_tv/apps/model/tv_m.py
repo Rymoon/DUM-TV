@@ -63,9 +63,11 @@ class TVNet(Module):
         # repeat B later in function `step`
         C,H,W = self.patch_shape
         kerK = ccid["kerK"]
+        
         kO= kerK.shape[0]//C
         assert (kerK.shape[-1]-1)%2 == 0,kerK.shape
         kR = (kerK.shape[-1]-1)//2
+        
         self.state_init = BufferDict({
             "u": torch.zeros((1,C,H,W)),
             "p": torch.zeros((1,C*kO,H,W)),
@@ -88,6 +90,38 @@ class TVNet(Module):
                 raise Exception(f"Try to {v.shape}-->dim0:{batch_size}")
             
         return v
+    
+    @staticmethod
+    def _step(f,u,p,mu,*,kerK,gamma,rho):
+        B,C,H,W = f.shape
+        kO= kerK.shape[0]//C
+        assert (kerK.shape[-1]-1)%2 == 0,kerK.shape
+        kR = (kerK.shape[-1]-1)//2
+        
+        # Subsolver (u)
+        #rho D^T
+        kerW = rho* kerK.flip((-1,-2))
+        # u = inv(kerH)*_w1
+        _w1 = f + CKtoC(conv2c_parallel(kerW,(p-mu)),C=C,dim = 1) # B, C, H, W
+        
+        ktk  = squeezek(conv2k(kerK,kerK))*rho # C*kO,1,...
+        sktk = ktk.reshape(C,kO,1,ktk.shape[-2],ktk.shape[-1]).sum(dim=1) # C,kO,1,2*kR+1,2*kR+1
+        I= torch.zeros_like(sktk)
+        IR = (I.shape[-1]-1)//2
+        I[...,IR,IR] =1.0
+        kerH = I +sktk #  fC,1,2*dR+1,2*dR+1
+        # ==============================
+        u_new=  ifft2(deconv2fft(fft2(_w1),psf2otf(kerH,(H,W)))) # 
+        
+        # Subsolver (p)
+        c_new = conv2c_parallel(kerK,CtoCK(u_new,K=kO,dim=1)) # B, C*kO, H, W
+        p_new = softt(c_new + mu,gamma)
+        
+        
+        # Subsolver (mu)
+        mu_new = mu + c_new -p_new
+
+        return u_new,p_new,mu_new
     
     
     def step(self,f,u,p,mu,*,kerK,gamma,rho):
@@ -116,36 +150,11 @@ class TVNet(Module):
          
         """
         B,C,H,W = f.shape
-        kO = self.constants.kO
-        kR = self.constants.kR
         
         assert H == self.constants.H
         assert W == self.constants.W
         
-        # Subsolver (u)
-        #rho D^T
-        kerW = rho* kerK.flip((-1,-2))
-        # u = inv(kerH)*_w1
-        _w1 = f + CKtoC(conv2c_parallel(kerW,(p-mu)),C=C,dim = 1) # B, C, H, W
-        
-        ktk  = squeezek(conv2k(kerK,kerK))*rho # C*kO,1,...
-        sktk = ktk.reshape(C,kO,1,ktk.shape[-2],ktk.shape[-1]).sum(dim=1) # C,kO,1,2*kR+1,2*kR+1
-        I= torch.zeros_like(sktk)
-        IR = (I.shape[-1]-1)//2
-        I[...,IR,IR] =1.0
-        kerH = I +sktk #  fC,1,2*dR+1,2*dR+1
-        # ==============================
-        u_new=  ifft2(deconv2fft(fft2(_w1),psf2otf(kerH,(H,W)))) # 
-        
-        # Subsolver (p)
-        c_new = conv2c_parallel(kerK,CtoCK(u_new,K=kO,dim=1)) # B, C*kO, H, W
-        p_new = softt(c_new + mu,gamma)
-        
-        
-        # Subsolver (mu)
-        mu_new = mu + c_new -p_new
-
-        return u_new,p_new,mu_new
+        return self._step(f,u,p,mu,kerK=kerK, gamma=gamma,rho=rho)
     
     def loop(self,x0,state_dict:Optional[Dict[str,Tensor]]=None):
         B,C,H,W = x0.shape

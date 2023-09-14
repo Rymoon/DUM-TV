@@ -19,10 +19,10 @@ def get_dataset_DenoiseToy():
     # Data
     proot = Path(root_pkg,"../Datasets/DenoiseToy/data/") # Do the sof-link
     dataset_train = DenoiseDataset(
-            noisy = list_pictures(Path(proot, "train/clean_noisy")),
+            #noisy = list_pictures(Path(proot, "train/clean_noisy")),
             clean = list_pictures(Path(proot, "train/clean")))
     dataset_test = DenoiseDataset(
-        noisy = list_pictures(Path(proot, "test/clean_noisy")),
+        #noisy = list_pictures(Path(proot, "test/clean_noisy")),
         clean = list_pictures(Path(proot, "test/clean"))
         )
 

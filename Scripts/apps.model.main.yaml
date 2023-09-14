@@ -10,11 +10,11 @@ experiments:
       - 256
       varia_d:
         C: 3
-        beta: 1
+        beta: 0.04
         kO: 2
         kR: 1
         kerK: DxDy
-        rho: 1
+        rho: 0.8
       varia_d-name: Toy
-    datetime: '2023-09-14 10:05:47.627324'
+    datetime: '2023-09-14 17:43:18.623696'
     note: Toy denoise
