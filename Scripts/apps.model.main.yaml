@@ -2,7 +2,6 @@ experiments:
   iteration:
     compiler: compile_iteration_tv
     config:
-      dm_batch_size: 1
       n_iteration: 40
       patch_shape:
       - 3
@@ -16,5 +15,26 @@ experiments:
         kerK: DxDy
         rho: 0.8
       varia_d-name: Toy
-    datetime: '2023-09-14 17:43:18.623696'
+    datetime: '2023-09-15 00:05:45.939378'
+    note: Toy denoise
+  training:
+    compiler: compile_training_tv
+    config:
+      lr: 0.0002
+      lr_scheduler_frequency: 2000
+      max_epochs: 20
+      n_iteration: 64
+      patch_shape:
+      - 3
+      - 256
+      - 256
+      varia_d:
+        C: 3
+        beta: 0.04
+        kO: 4
+        kR: 5
+        kerK: DxDy
+        rho: 0.8
+      varia_d-name: Toy
+    datetime: '2023-09-15 00:05:45.945935'
     note: Toy denoise

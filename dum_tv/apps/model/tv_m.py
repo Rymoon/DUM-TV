@@ -52,7 +52,7 @@ class TVNet(Module):
         assert all([k in cid for k in self.controled_names]), (cid.keys(),self.controled_names)
         ccid = {k:cid[k] for k in self.controled_names}
         
-        self.controled_init = ParameterList([ParameterDict({k:v for k,v in ccid.items()}) for i in range(n_steps)])
+        self.controled_init = ParameterList([ParameterDict({k:v.detach().clone() for k,v in ccid.items()}) for i in range(n_steps)])
         
         # Related to variational model
         ### Maintained through layers
@@ -155,15 +155,10 @@ class TVNet(Module):
         assert W == self.constants.W
         
         return self._step(f,u,p,mu,kerK=kerK, gamma=gamma,rho=rho)
-    
-    def loop(self,x0,state_dict:Optional[Dict[str,Tensor]]=None):
+    def loop_init(self,x0:Tensor,state_d:Optional[Dict[str,Tensor]]):
         B,C,H,W = x0.shape
-        
-        # Input
-        f = x0
-        
         # State
-        if state_dict == None:
+        if state_d == None:
             ci = self.state_init
             ci.to(x0.device) # Wierd. But ci may not be to_device properly.
             u,p,mu = x0,ci.p,ci.mu
@@ -172,22 +167,27 @@ class TVNet(Module):
             u = self.repeat_state_var(u,B)
             mu = self.repeat_state_var(mu,B)
         else:
-            p = state_dict["p"].to(device=x0.device)
+            p = state_d["p"].to(device=x0.device)
             if p.shape[0] != B:
                 assert p.shape[0] ==1
                 p = self.repeat_state_var(p,B)
             
-            u = state_dict["u"].to(x0.device)
+            u = state_d["u"].to(x0.device)
             if u.shape[0] != B:
                 assert u.shape[0] ==1
                 u = self.repeat_state_var(u,B)
                 
-            mu = state_dict["mu"].to(x0.device)
+            mu = state_d["mu"].to(x0.device)
             if mu.shape[0] != B:
                 assert mu.shape[0] ==1
                 mu = self.repeat_state_var(mu,B)
-                
+        return u,p,mu
+    
+    def loop(self,x0,state_d:Optional[Dict[str,Tensor]]=None):
         
+        # Input
+        f = x0
+        u,p,mu = self.loop_init(x0,state_d)
         for i in range(self.n_steps):
             #TODO:TVNet.loop: Mixin control_model
             args = {k:self.controled_init[i][k]

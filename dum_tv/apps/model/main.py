@@ -64,7 +64,7 @@ class Model(ModelBase):
         
         self.log("train_loss",loss)
         return loss
-
+    
     def validation_step(self,pack, pack_idx):
         
         noisy,clean = pack
@@ -84,11 +84,11 @@ class Model(ModelBase):
     
     
     def configure_optimizers(self):
-        opt = torch.optim.Adam([{"params":self.decnet.parameters(),"lr":self.lr},{"params":self.segnet.parameters(),"lr":self.lr*5}])
+        opt = torch.optim.Adam([{"params":self.tvnet.parameters(),"lr":self.lr}])
         sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,"min",factor=0.8,patience=10,verbose=True)
         return {"optimizer":opt,"lr_scheduler":{
             "interval":"step",
-            "frequency":250,
+            "frequency":self.lr_scheduler_frequency,
             "scheduler":sch,
             "monitor":"val_loss",
         }}
@@ -106,6 +106,7 @@ root_Results = get_root_Results(pkg)
 assert (root_Results).exists(),f"Results folder not exists. Create of softlink it: {root_Results}"
 
 def compile_iteration_tv(
+    # tvnet
     patch_shape:Tuple[int,int,int],
     n_iteration:int,# depth of DU
     varia_d:dict,
@@ -142,10 +143,16 @@ def compile_iteration_tv(
 
 
 def compile_training_tv(
+    # tvnet
     patch_shape:Tuple[int,int,int],
     n_iteration:int,# depth of DU
     varia_d:dict,
-    #
+    # model 
+    lr:float,
+    lr_scheduler_frequency:int, # per steps
+    # optim
+    max_epochs:int,
+    # 
     dm:MyDataModule,
     gpuid:int,
     cfn:str,
@@ -153,19 +160,28 @@ def compile_training_tv(
     """
     Deep unfolding; Training
     """
+    device = torch.device(f"cuda:{gpuid}")
     
     from .tv_m import Varia,init_varia
-    varia = Varia(varia_d)
-    init_varia(varia,device = torch.device("cpu"))
+    varia = Varia( **varia_d)
+    init_varia(varia,device = device)
     tvnet = TVNet(patch_shape,n_iteration,None,varia.as_controled_init())
    
     from datetime import timedelta
     from ren_utils.pl import ElapsedTime,ModelSummarySave
+    from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,ModelCheckpoint)
+    import dum_tv
+    root_Results = get_root_Results(dum_tv)
     root_dir = Path(root_Results,cfn).as_posix()
     trainer = pl.Trainer(default_root_dir=root_dir,gpus=[gpuid],
-                         callbacks = [ElapsedTime(),ModelSummarySave()])
+                         max_epochs=max_epochs,
+                         callbacks = [
+                            ElapsedTime(),ModelSummarySave(),LearningRateMonitor(),
+                            ModelCheckpoint(filename="last_epoch-{epoch}",save_last=True,train_time_interval= timedelta(minutes=15)),
+                            ModelCheckpoint(filename='best_train_loss_epoch-{epoch}', monitor='train_loss', save_top_k=1, mode='min'),
+                            ])
     log_dir=  trainer.log_dir
-    model = Model(tvnet,0,1)
+    model = Model(tvnet,lr,lr_scheduler_frequency)
     
     # TODO
     
