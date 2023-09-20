@@ -1,10 +1,3 @@
-
-# Will import:
-# * xxx_h
-# * xxx_opr
-# Contents:
-# * Deep unfolding networks
-
 import pytorch_lightning as pl
 
 
@@ -19,7 +12,11 @@ from torch import Tensor
 from torch.nn import ParameterDict,ParameterList,ModuleList
 from ren_utils.rennet import BufferDict
 from collections import namedtuple
-class TVNet(Module):
+
+from .tv_m import TVNet
+
+
+class TVNet_ctrl(Module):
     """
     #NOTICE:TVNet: Currently, control_model not work; Always None.
     controled_init = [(controled_name, init_tensor)]
@@ -203,87 +200,3 @@ class TVNet(Module):
     def forward(self,x):
         return self.loop(x,None)
         
-
-from dataclasses import dataclass
-@dataclass
-class Varia:
-    """
-    Parameter
-    
-    Required:
-    kO:int      #     number of kernels; kerK.shape[0]
-    kR:int      #     (2*kR+1)  size of kernel
-    C:int       #     channel of $f$, the input of DecNet
-    kerK:Tensor #     str;  See getKernel_dispatch.
-    beta:Tensor #     1,
-    rho:Tensor  #     1,
-    
-    """
-    kO:int 
-    kR:int
-    C:int
-    kerK:str   
-    beta:float  
-    rho:float
-    _initialized:dict=None
-    def to(self,device):
-        for k,v in vars(self).items():
-            if isinstance(v,torch.Tensor):
-                setattr(self,k,v.to(device))
-        return self
-    def as_controled_init(self, keys:Optional[List[str]]=None):
-        """None: all in _initialized"""
-        o = []
-        if keys is None:
-            for k,v in self._initialized.items():
-                o.append((k,v))
-        else:
-            _i = self._initialized
-            for k in keys:
-                if k in _i:
-                    o.append((k,_i[k]))
-                else:
-                    raise Exception(f"{k} not in ._initialized: {_i.keys()}")
-        return o
-        
-        
-        
-def init_varia(varia:Varia,device:torch.device):
-    """
-    Return None; Store to varia._initialized
-
-    
-
-    beta:Tensor #     1,  C, 1, 1
-    rho:Tensor#       C*kO,1, 1, 1
-    gamma:Tensor#     1,C*kO, 1, 1
-    
-    kerK:Tensor #     C*K,1,2*kR+1,2*kR+1
-    wR=kR
-    kerW:Tensor #     C*K,1,2*wR+1,2*wR+1
-    hR=8*kR
-    kerH:Tensor #     C,  1,2*hR+1,2*hR+1
-
-    """
-    kO = varia.kO
-    C = varia.C
-    kR = varia.kR
-    
-    kerK = torch.cat(getKernel_dispatch(varia.kerK,kO,kR) ,dim=0)# K,1,kR,kR
-    kerK = KtoCK(kerK,C=C,dim=0).clone().detach()
-    
-    
-    beta = torch.tensor(varia.beta).reshape(1,1,1,1).float()
-    rho =  torch.ones((C*kO,1,1,1))*varia.rho # CK 1 1 1
-
-    gamma= beta.unsqueeze(1).expand(1,C,kO,1,1).reshape(1,C*kO,1,1)/varia.rho
-    
-    assert tuple(kerK.shape) == (C*kO,1,2*kR+1,2*kR+1),f"kerK {tuple(kerK.shape)} neq {(C*kO,1,2*kR+1,2*kR+1)}"
-    assert tuple(beta.shape)== (1,1,1,1),f"beta {tuple(beta.shape) } neq {(1,1,1,1)}"
-    assert tuple(gamma.shape)==(1,kO*C,1,1),f"gamma {tuple(gamma.shape)} neq {(1,kO*C,1,1)}"
-    
-    varia._initialized=  {
-        "beta":beta.to(device), 
-        "gamma":gamma.to(device), 
-        "rho":rho.to(device), 
-        "kerK":kerK.to(device)}
