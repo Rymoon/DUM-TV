@@ -15,6 +15,39 @@ from collections import namedtuple
 
 from .tv_m import TVNet
 
+class CtrlNet_plain(Module):
+    """
+    self.__init__()
+    self.init()
+    self.get_xxx()
+    """
+    def __init__(self,controled_init:List[Tuple[str,Tensor]]):
+        super().__init__()
+        self.ci = controled_init
+    
+    def init(self,n_iteration):
+        # assert self.controled_names == tuple(i[0] for i in controled_init), f"Order and names should match:{self.controled_names} neq {tuple(i[0] for i in controled_init)}"
+        cid = {k:v for k,v in self.ci}
+        
+        self.param_ld = ParameterList([ParameterDict({k:v.detach().clone() for k,v in cid.items()}) for i in range(n_iteration)])
+    
+    def get(self,i,k):
+        return self.param_ld[i][k]
+    
+    
+class CtrlNet_alex(Module):
+    def __init__(self,controled_init:List[Tuple[str,Tensor]]):
+        super().__init__()
+        self.ci = controled_init
+    
+    def init(self,n_iteration):
+        # assert self.controled_names == tuple(i[0] for i in controled_init), f"Order and names should match:{self.controled_names} neq {tuple(i[0] for i in controled_init)}"
+        cid = {k:v for k,v in self.ci}
+        
+        self.param_ld = ParameterList([ParameterDict({k:v.detach().clone() for k,v in cid.items()}) for i in range(n_iteration)])
+    
+    def get(self,i,k):
+        return self.param_ld[i][k]
 
 class TVNet_ctrl(Module):
     """
@@ -34,7 +67,7 @@ class TVNet_ctrl(Module):
     * args in controled_init will go along.
     """
     controled_names = ("kerK","gamma","rho")# type: Tuple[str,...]
-    def __init__(self,patch_shape:Tuple[int,int,int],n_iteration:int,control_model:Module,controled_init:List[Tuple[str,Tensor]]):
+    def __init__(self,patch_shape:Tuple[int,int,int],n_iteration:int,control_model:Module,):
         """
         patch_shape: CHW
         """

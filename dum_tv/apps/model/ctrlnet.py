@@ -63,5 +63,9 @@ class AlexNet(nn.Module):
         return C * H * W
 
 class Alexnet_Branch(Alexnet):
+    """
+    input shape,
+    List[output shape]
+    """
     def __init__(self,branches_d):
-        
+        pass
